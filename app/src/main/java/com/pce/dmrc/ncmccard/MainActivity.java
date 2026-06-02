@@ -2,10 +2,13 @@ package com.pce.dmrc.ncmccard;
 
 import android.annotation.SuppressLint;
 import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.nfc.NfcAdapter;
+import android.nfc.cardemulation.CardEmulation;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
@@ -17,15 +20,23 @@ import android.widget.Toast;
 
 import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+
+import com.google.android.material.bottomsheet.BottomSheetDialog;
 
 import java.security.MessageDigest;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Random;
 
 public class MainActivity extends AppCompatActivity {
@@ -33,10 +44,10 @@ public class MainActivity extends AppCompatActivity {
     private static final String TAG = "NCMC_CARD";
 
     private Button btnStartCardService;
+    private Button btnViewHistory;
     private Button btnOfflineTopUp;
 
-    private TextView tvServicePan;
-    private TextView tvServiceBalance;
+    private TextView tvServicePan, tvServiceBalance, tvCardBalance, tvCardNumber, tvStationName, tvDateTime, tvFareAmount, tvRemainingBalance, tvTrxStatus, tvKms, tvSpent, tvTrips;
 
     private SharedPreferences sharedPreferences;
 
@@ -213,6 +224,7 @@ public class MainActivity extends AppCompatActivity {
 
                             String storedValue =
                                     String.format(
+                                            Locale.getDefault(),
                                             "%012d",
                                             finalBalance
                                     );
@@ -243,6 +255,52 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
         );
+
+
+    }
+
+    private boolean isDefaultPaymentApp() {
+
+        NfcAdapter adapter = NfcAdapter.getDefaultAdapter(this);
+
+        if (adapter == null) {
+            return false;
+        }
+
+        CardEmulation cardEmulation = CardEmulation.getInstance(adapter);
+
+        ComponentName service = new ComponentName(
+                this,
+                MyApduHostService.class); // Your HCE service class
+
+        return cardEmulation.isDefaultServiceForCategory(
+                service,
+                CardEmulation.CATEGORY_PAYMENT);
+    }
+
+    private void selectDefaultApp() {
+        Intent intent = new Intent(
+                CardEmulation.ACTION_CHANGE_DEFAULT);
+
+        intent.putExtra(
+                CardEmulation.EXTRA_SERVICE_COMPONENT,
+                new ComponentName(this, MyApduHostService.class));
+
+        intent.putExtra(
+                CardEmulation.EXTRA_CATEGORY,
+                CardEmulation.CATEGORY_PAYMENT);
+
+        startActivity(intent);
+    }
+
+    private boolean isNfcEnabled() {
+        NfcAdapter nfcAdapter = NfcAdapter.getDefaultAdapter(this);
+
+        if (nfcAdapter == null) {
+            return false;
+        }
+
+        return nfcAdapter.isEnabled();
     }
 
     // =====================================================
@@ -261,6 +319,28 @@ public class MainActivity extends AppCompatActivity {
 
         tvServiceBalance =
                 findViewById(R.id.tvServiceBalance);
+
+        tvCardBalance = findViewById(R.id.tvCardBalance);
+
+        tvCardNumber = findViewById(R.id.tvCardNumber);
+
+        tvStationName = findViewById(R.id.tvStationName);
+        tvDateTime = findViewById(R.id.tvDateTime);
+        tvFareAmount = findViewById(R.id.tvFareAmount);
+        tvRemainingBalance = findViewById(R.id.tvRemainingBalance);
+        tvTrxStatus = findViewById(R.id.tvTrxStatus);
+
+        tvKms = findViewById(R.id.tvKms);
+        tvSpent = findViewById(R.id.tvSpent);
+        tvTrips = findViewById(R.id.tvTrips);
+        btnViewHistory = findViewById(R.id.btnViewHistory);
+
+        btnViewHistory.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showHistoryBottomSheet();
+            }
+        });
 
         sharedPreferences =
                 getSharedPreferences(
@@ -301,6 +381,8 @@ public class MainActivity extends AppCompatActivity {
                     "**** Card Number ****\n" + pan
             );
 
+            tvCardNumber.setText(pan);
+
             String balance =
                     sharedPreferences.getString(
                             Constants.SERVICE_BALANCE,
@@ -312,6 +394,7 @@ public class MainActivity extends AppCompatActivity {
 
             String formatted =
                     String.format(
+                            Locale.getDefault(),
                             "%.2f",
                             value / 100.0
                     );
@@ -321,16 +404,206 @@ public class MainActivity extends AppCompatActivity {
                             formatted
             );
 
-        } else {
+            tvCardBalance.setText("₹" + formatted);
 
-            tvServicePan.setText(
-                    "**** Card Number ****\nNOT CREATED"
-            );
+            String serviceData = sharedPreferences.getString(Constants.SERVICE_DATA, Constants.TEMP_SERVICE_DATA);
 
-            tvServiceBalance.setText(
-                    "**** Card Balance ****\n₹0.00"
-            );
+            String rollingTrips = sharedPreferences.getString(Constants.ROLLING_TRIPS, "0");
+            String rollingSpent = sharedPreferences.getString(Constants.ROLLING_SPENT, "0");
+            String rollingDistance = sharedPreferences.getString(Constants.ROLLING_DISTANCE, "0");
+
+            tvTrips.setText(rollingTrips);
+            tvSpent.setText("₹" + String.format(Locale.getDefault(), "%.2f", Long.parseLong(rollingSpent) / 10.0));
+            tvKms.setText(rollingDistance + " kms");
+
+            String fareAmount = String.format(Locale.getDefault(), "%.2f", Long.parseLong(serviceData.substring(26, 30), 16) / 10.0);
+
+            Log.d(TAG, "updateUi: Fare Amount: " + fareAmount);
+
+            tvFareAmount.setText("₹" + fareAmount);
+
+            double validCardBalance = Double.parseDouble(formatted) + Double.parseDouble(fareAmount);
+
+            String finalCardBalance = String.format(Locale.getDefault(), "%.2f", validCardBalance);
+
+            tvRemainingBalance.setText("₹" + finalCardBalance);
+
+            String stationId = String.valueOf(Integer.parseInt(serviceData.substring(30, 34), 16));
+
+            Log.d(TAG, "updateUi: Station Id: " + stationId);
+
+            if (stationId.equals("25")) {
+                tvStationName.setText("New Delhi");
+                tvTrxStatus.setText("Exit");
+                tvTrxStatus.setTextColor(ContextCompat.getColor(this, R.color.red));
+                tvTrxStatus.setBackgroundColor(ContextCompat.getColor(this, R.color.lightRed));
+            } else {
+                tvStationName.setText("Shivaji Stadium");
+                tvTrxStatus.setText("Entry");
+                tvTrxStatus.setTextColor(ContextCompat.getColor(this, R.color.green));
+                tvTrxStatus.setBackgroundColor(ContextCompat.getColor(this, R.color.lightGreen));
+            }
+
+            String trxStatus = serviceData.substring(40, 41);
+
+            Log.e(TAG, "updateUi: Trx Status: " + trxStatus);
+
+            Log.d(TAG, "updateUi: " + trxStatus);
+
+            String dateTrxHex = serviceData.substring(20, 26);
+
+            String dateTimeStr = getTransactionDateTime(dateTrxHex);
+
+            tvDateTime.setText(dateTimeStr);
+
         }
+    }
+
+    private String getTransactionDateTime(String data) {
+        String dateTimeStr = String.valueOf(Integer.parseInt(data, 16));
+
+        Log.d(TAG, "updateUi: Date Time Str: " + dateTimeStr);
+
+        try {
+            SimpleDateFormat sdf1 = new SimpleDateFormat("yyMMdd");
+            String effDateStr = sharedPreferences.getString(Constants.SERVICE_DATE, "000000");
+            Date effDate = sdf1.parse(effDateStr);
+            long effTimeStamp = Objects.requireNonNull(effDate).getTime() / 1000L;
+
+            String finalDateTrxStr = String.valueOf(effTimeStamp + Long.parseLong(dateTimeStr));
+
+            long finalTmp = Long.parseLong(finalDateTrxStr) * 1000L; // example
+
+            SimpleDateFormat sdf2 = new SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.ENGLISH);
+
+            return sdf2.format(new Date(finalTmp));
+        } catch (Exception e) {
+            Log.e(TAG, "updateUi: ", e);
+        }
+        return "";
+    }
+
+    private void showHistoryBottomSheet() {
+
+        BottomSheetDialog dialog =
+                new BottomSheetDialog(this);
+
+        View view = getLayoutInflater().inflate(
+                R.layout.bottom_sheet_layout,
+                null
+        );
+
+        RecyclerView rvHistory =
+                view.findViewById(R.id.rvHistory);
+
+        rvHistory.setLayoutManager(
+                new LinearLayoutManager(this)
+        );
+
+        List<HistoryItem> historyList = new ArrayList<>();
+
+        String serviceData = sharedPreferences.getString(Constants.SERVICE_DATA, Constants.TEMP_SERVICE_DATA);
+
+        // 17
+        int RECORD_LENGTH = 34;
+        Log.d(TAG, "showHistoryBottomSheet: " + serviceData.substring(42, serviceData.length() - 1));
+        String historyServiceData = serviceData.substring(42, serviceData.length() - 1);
+
+//        FF178301020A04E7A90015000009500100
+
+        for (int i = 0;
+             i + RECORD_LENGTH <= historyServiceData.length();
+             i += RECORD_LENGTH) {
+
+            String record =
+                    historyServiceData.substring(
+                            i,
+                            i + RECORD_LENGTH
+                    );
+
+            // txn date
+            String dateTimeHex = record.substring(12, 18);
+            String dateTimeStr = getTransactionDateTime(dateTimeHex);
+
+            Log.d(TAG, "showHistoryBottomSheet: dateTimeStr: " + dateTimeStr);
+
+            // txn status
+            String txnStatusStr = record.substring(31, 32);
+
+            Log.d(TAG, "showHistoryBottomSheet: txnStatusStr: " + txnStatusStr);
+
+//            String stationId = record.substring(18, 22);
+//
+//            Log.d(TAG, "showHistoryBottomSheet: StationId: " + stationId);
+
+            Log.d("HISTORY", record);
+
+            String txnAmtFare = String.format(Locale.getDefault(), "%.2f", Long.parseLong(record.substring(22, 26), 16) / 10.0);
+
+            String txnAmtBal = String.format(Locale.getDefault(), "%.2f", (Long.parseLong(record.substring(26, 30)) * 10.0) / 10.0);
+
+            Log.d(TAG, "showHistoryBottomSheet: txnAmtFare: " + record.substring(22, 26));
+//            Log.d(TAG, "showHistoryBottomSheet: txnAmtFare: " + record.substring(22, 26));
+
+            if (txnStatusStr.equals("1")) {
+                historyList.add(new HistoryItem("Entry", "", "₹0.00", "₹" + txnAmtBal, dateTimeStr));
+            } else {
+                historyList.add(new HistoryItem("Exit", "", "₹" + txnAmtFare, "₹" + txnAmtBal, dateTimeStr));
+            }
+        }
+
+//        List<HistoryItem> historyList = new ArrayList<>();
+
+//        historyList.add(
+//                new HistoryItem(
+//                        "Entry",
+//                        "New Delhi",
+//                        "₹0.00",
+//                        "₹250.00",
+//                        "02 Jun 2026, 10:15 AM"
+//                )
+//        );
+//
+//        historyList.add(
+//                new HistoryItem(
+//                        "Exit",
+//                        "Shivaji Stadium",
+//                        "₹20.00",
+//                        "₹230.00",
+//                        "02 Jun 2026, 10:42 AM"
+//                )
+//        );
+//
+//        historyList.add(
+//                new HistoryItem(
+//                        "Entry",
+//                        "Rajiv Chowk",
+//                        "₹0.00",
+//                        "₹230.00",
+//                        "02 Jun 2026, 11:05 AM"
+//                )
+//        );
+//
+//        historyList.add(
+//                new HistoryItem(
+//                        "Exit",
+//                        "Kashmere Gate",
+//                        "₹15.00",
+//                        "₹215.00",
+//                        "02 Jun 2026, 11:22 AM"
+//                )
+//        );
+
+        HistoryAdapter adapter =
+                new HistoryAdapter(
+                        this,
+                        historyList
+                );
+
+        rvHistory.setAdapter(adapter);
+
+        dialog.setContentView(view);
+        dialog.show();
     }
 
     // =====================================================

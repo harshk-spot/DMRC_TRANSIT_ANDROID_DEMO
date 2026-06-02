@@ -108,15 +108,30 @@ public class MyApduHostService extends HostApduService {
 
                 long longFare = Long.parseLong(fareAmount, 16);
 
-                if (longFare == 0) {
-                    return FILE_NOT_FOUND;
-                }
+//                if (longFare == 0) {
+//                    return FILE_NOT_FOUND;
+//                }
 
                     // ==========================================
                     // READ CURRENT BALANCE
                     // ==========================================
 
                     String serviceBalance = sharedPreferences.getString(Constants.SERVICE_BALANCE, "000000000000");
+
+
+                    if (longFare > 0) {
+                        String rollingTrips = sharedPreferences.getString(Constants.ROLLING_TRIPS, "0");
+                        String rollingSpent = sharedPreferences.getString(Constants.ROLLING_SPENT, "0");
+                        String rollingDistance = sharedPreferences.getString(Constants.ROLLING_DISTANCE, "0");
+
+                        int intRollingTrips = Integer.parseInt(rollingTrips) + 1;
+                        long longRollingSpent = Long.parseLong(rollingSpent) + (longFare * 10L);
+                        int intRollingKms = Integer.parseInt(rollingDistance) + 2;
+
+                        sharedPreferences.edit().putString(Constants.ROLLING_TRIPS, String.valueOf(intRollingTrips)).apply();
+                        sharedPreferences.edit().putString(Constants.ROLLING_SPENT, String.valueOf(longRollingSpent)).apply();;
+                        sharedPreferences.edit().putString(Constants.ROLLING_DISTANCE, String.valueOf(intRollingKms)).apply();;
+                    }
 
                     long currentBalance = Long.parseLong(serviceBalance);
 
@@ -125,6 +140,8 @@ public class MyApduHostService extends HostApduService {
                     // ==========================================
 
                     long finalBalance = currentBalance - (longFare * 10L);
+
+
 
                     if (finalBalance < 0) {
                         finalBalance = 0;
