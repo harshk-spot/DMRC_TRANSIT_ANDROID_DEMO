@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="24dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="NFC Setup Required"
+        android:textSize="22sp"
+        android:textStyle="bold"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Please complete the following steps to continue."
+        android:layout_marginTop="8dp"/>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="24dp">
+
+        <ImageView
+            android:id="@+id/ivNfcStatus"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:src="@drawable/outline_close_small_24"/>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="NFC Enabled"
+            android:layout_marginStart="12dp"/>
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="12dp">
+
+        <ImageView
+            android:id="@+id/ivDefaultStatus"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:src="@drawable/outline_close_small_24"/>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="App Set As Default"
+            android:layout_marginStart="12dp"/>
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/btnNfcSettings"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Open NFC Settings"
+        android:layout_marginTop="24dp"/>
+
+    <Button
+        android:id="@+id/btnDefaultApp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Set Default App"
+        android:layout_marginTop="12dp"/>
+
+</LinearLayout>

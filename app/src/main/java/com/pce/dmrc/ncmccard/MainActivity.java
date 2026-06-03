@@ -1,6 +1,7 @@
 package com.pce.dmrc.ncmccard;
 
-import android.annotation.SuppressLint;
+import static java.lang.Thread.sleep;
+
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
@@ -15,6 +16,8 @@ import android.provider.Settings;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -27,6 +30,7 @@ import androidx.core.view.WindowInsetsCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.google.android.material.bottomsheet.BottomSheetBehavior;
 import com.google.android.material.bottomsheet.BottomSheetDialog;
 
 import java.security.MessageDigest;
@@ -50,6 +54,8 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvServicePan, tvServiceBalance, tvCardBalance, tvCardNumber, tvStationName, tvDateTime, tvFareAmount, tvRemainingBalance, tvTrxStatus, tvKms, tvSpent, tvTrips;
 
     private SharedPreferences sharedPreferences;
+
+    private BottomSheetDialog nfcBottomSheet;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -256,7 +262,182 @@ public class MainActivity extends AppCompatActivity {
                 }
         );
 
+        updateServiceData();
 
+        try {
+            sleep(1);
+        } catch (InterruptedException e) {
+//            throw new RuntimeException(e);
+        }
+
+        updateWalletBalance();
+
+        showNfcRequirementSheet();
+
+//        if (!isNfcEnabled()) {
+//            Toast.makeText(this, "NFC is not enabled.", Toast.LENGTH_SHORT).show();
+//        }
+//
+//        if (!isDefaultPaymentApp()) {
+//            selectDefaultApp();
+//        }
+
+    }
+
+    private void updateServiceData() {
+        SharedPreferences.Editor editor =
+                sharedPreferences.edit();
+
+        int status =
+                sharedPreferences.getInt(
+                        Constants.SERVICE_STATUS,
+                        0
+                );
+
+        if (status == 0) {
+
+            String deviceId =
+                    DeviceUtils.getDeviceId(
+                            MainActivity.this
+                    );
+
+            String fixedDeviceId =
+                    getFixed16Hex(deviceId);
+
+            SimpleDateFormat sdf =
+                    new SimpleDateFormat("yyMMdd", Locale.getDefault());
+
+            String dateTime = sdf.format(new Date());   // e.g. 260530
+
+            Random random = new Random();
+            int random4Digit = 1000 + random.nextInt(9000);
+
+            String randomNumber = String.format(Locale.getDefault(), "%04d", random4Digit);
+
+            Calendar cal = Calendar.getInstance();
+            cal.add(Calendar.YEAR, 10);
+
+            String expDate =
+                    new SimpleDateFormat("yyMMdd", Locale.getDefault())
+                            .format(cal.getTime());
+
+            Log.e(TAG,
+                    "DEVICE ID: " + fixedDeviceId);
+
+            editor.putString(
+                    Constants.SERVICE_BALANCE,
+                    "000000000000"
+            );
+
+            editor.putString(
+                    Constants.SERVICE_PAN,
+                    fixedDeviceId
+            );
+
+            editor.putString(
+                    Constants.SERVICE_DATE,
+                    dateTime
+            );
+
+            editor.putString(
+                    Constants.SERVICE_EXPIRY,
+                    expDate
+            );
+
+            editor.putString(
+                    Constants.SERVICE_CVV,
+                    randomNumber
+            );
+
+            editor.putString(
+                    Constants.SERVICE_DATA,
+                    Constants.TEMP_SERVICE_DATA
+            );
+
+            editor.putInt(
+                    Constants.SERVICE_STATUS,
+                    1
+            );
+
+            editor.apply();
+
+            updateUi();
+
+            Toast.makeText(
+                    MainActivity.this,
+                    "Service created successfully!",
+                    Toast.LENGTH_SHORT
+            ).show();
+
+        } else {
+
+            Toast.makeText(
+                    MainActivity.this,
+                    "Service already exists!",
+                    Toast.LENGTH_SHORT
+            ).show();
+        }
+    }
+
+    private void updateWalletBalance() {
+        SharedPreferences.Editor editor =
+                sharedPreferences.edit();
+
+        int status =
+                sharedPreferences.getInt(
+                        Constants.SERVICE_STATUS,
+                        0
+                );
+
+        if (status == 1) {
+
+            String serviceBalance =
+                    sharedPreferences.getString(
+                            Constants.SERVICE_BALANCE,
+                            "000000000000"
+                    );
+
+            long currentBalance =
+                    Long.parseLong(serviceBalance);
+
+            if (currentBalance > 0) {
+                return;
+            }
+
+            // Add 100 rupees
+            long finalBalance =
+                    currentBalance + (1000 * 100L);
+
+            String storedValue =
+                    String.format(
+                            Locale.getDefault(),
+                            "%012d",
+                            finalBalance
+                    );
+
+            editor.putString(
+                    Constants.SERVICE_BALANCE,
+                    storedValue
+            );
+
+            editor.apply();
+
+            updateUi();
+
+            Toast.makeText(
+                    MainActivity.this,
+                    "Top-Up Success!",
+                    Toast.LENGTH_SHORT
+            ).show();
+
+        } else {
+
+            Toast.makeText(
+                    MainActivity.this,
+                    "Service not created!",
+                    Toast.LENGTH_SHORT
+            ).show();
+        }
     }
 
     private boolean isDefaultPaymentApp() {
@@ -293,15 +474,15 @@ public class MainActivity extends AppCompatActivity {
         startActivity(intent);
     }
 
-    private boolean isNfcEnabled() {
-        NfcAdapter nfcAdapter = NfcAdapter.getDefaultAdapter(this);
-
-        if (nfcAdapter == null) {
-            return false;
-        }
-
-        return nfcAdapter.isEnabled();
-    }
+//    private boolean isNfcEnabled() {
+//        NfcAdapter nfcAdapter = NfcAdapter.getDefaultAdapter(this);
+//
+//        if (nfcAdapter == null) {
+//            return false;
+//        }
+//
+//        return nfcAdapter.isEnabled();
+//    }
 
     // =====================================================
     // INITIALIZE VARIABLES
@@ -654,7 +835,138 @@ public class MainActivity extends AppCompatActivity {
                 );
             }
         }
+        checkRequirements();
         updateUi();
+    }
+
+    private void showNfcRequirementSheet() {
+
+        if (nfcBottomSheet != null && nfcBottomSheet.isShowing()) {
+            return;
+        }
+
+        View view = getLayoutInflater().inflate(
+                R.layout.bottom_sheet_required,
+                null
+        );
+
+        ImageView ivNfcStatus = view.findViewById(R.id.ivNfcStatus);
+        ImageView ivDefaultStatus = view.findViewById(R.id.ivDefaultStatus);
+
+        Button btnNfcSettings = view.findViewById(R.id.btnNfcSettings);
+        Button btnDefaultApp = view.findViewById(R.id.btnDefaultApp);
+
+        nfcBottomSheet = new BottomSheetDialog(
+                this,
+//                R.style.Theme_NCMCCARD
+                com.google.android.material.R.style.Theme_Design_Light_BottomSheetDialog
+        );
+
+        nfcBottomSheet.setContentView(view);
+        nfcBottomSheet.setCancelable(false);
+        nfcBottomSheet.setCanceledOnTouchOutside(false);
+
+        nfcBottomSheet.setOnShowListener(dialog -> {
+
+            FrameLayout bottomSheet = nfcBottomSheet.findViewById(
+                    com.google.android.material.R.id.design_bottom_sheet
+            );
+
+            if (bottomSheet != null) {
+
+                BottomSheetBehavior<View> behavior = BottomSheetBehavior.from(bottomSheet);
+
+                behavior.setState(BottomSheetBehavior.STATE_EXPANDED);
+                behavior.setDraggable(false);
+                behavior.setHideable(false);
+                behavior.setSkipCollapsed(true);
+            }
+        });
+
+        btnNfcSettings.setOnClickListener(v -> {
+            startActivity(new Intent(Settings.ACTION_NFC_SETTINGS));
+        });
+
+        btnDefaultApp.setOnClickListener(v -> {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                startActivity(
+                        new Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
+                );
+            }
+        });
+
+        updateStatus(ivNfcStatus, ivDefaultStatus);
+
+        nfcBottomSheet.show();
+    }
+
+    private void checkRequirements() {
+
+        boolean nfcEnabled = isNfcEnabled();
+        boolean defaultApp = isMyAppDefault();
+
+        if (nfcEnabled && defaultApp) {
+
+            if (nfcBottomSheet != null &&
+                    nfcBottomSheet.isShowing()) {
+
+                nfcBottomSheet.dismiss();
+            }
+
+        } else {
+
+            if (nfcBottomSheet == null ||
+                    !nfcBottomSheet.isShowing()) {
+
+                showNfcRequirementSheet();
+            }
+        }
+    }
+
+    private void updateStatus(ImageView ivNfcStatus,
+                              ImageView ivDefaultStatus) {
+
+        ivNfcStatus.setImageResource(
+                isNfcEnabled()
+                        ? R.drawable.outline_check_small_24
+                        : R.drawable.outline_close_small_24
+        );
+
+        ivDefaultStatus.setImageResource(
+                isMyAppDefault()
+                        ? R.drawable.outline_check_small_24
+                        : R.drawable.outline_close_small_24
+        );
+    }
+
+    private boolean isNfcEnabled() {
+
+        NfcAdapter adapter = NfcAdapter.getDefaultAdapter(this);
+
+        return adapter != null && adapter.isEnabled();
+    }
+
+    private boolean isMyAppDefault() {
+
+        NfcAdapter adapter = NfcAdapter.getDefaultAdapter(this);
+
+        if (adapter == null) {
+            return false;
+        }
+
+        CardEmulation cardEmulation =
+                CardEmulation.getInstance(adapter);
+
+        ComponentName componentName =
+                new ComponentName(
+                        this,
+                        MyApduHostService.class   // Your HCE Service class
+                );
+
+        return cardEmulation.isDefaultServiceForCategory(
+                componentName,
+                CardEmulation.CATEGORY_PAYMENT
+        );
     }
 
     @Override
